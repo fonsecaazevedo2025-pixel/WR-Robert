@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Performance de Leads</title>
+    <meta name="theme-color" content="#2563EB">
+    <link rel="manifest" href='data:application/manifest+json,{"name":"Performance de Leads","short_name":"Leads Performance","description":"Gerenciamento de Performance de Corretores de Imóveis.","start_url":".","display":"standalone","orientation":"portrait","background_color":"#F3F4F6","theme_color":"#2563EB","icons":[{"src":"https://www.gstatic.com/images/branding/product/1x/google_cloud_48dp.png","sizes":"48x48","type":"image/png"},{"src":"https://www.gstatic.com/images/branding/product/1x/google_cloud_72dp.png","sizes":"72x72","type":"image/png"},{"src":"https://www.gstatic.com/images/branding/product/1x/google_cloud_96dp.png","sizes":"96x96","type":"image/png"},{"src":"https://www.gstatic.com/images/branding/product/1x/google_cloud_144dp.png","sizes":"144x144","type":"image/png"},{"src":"https://www.gstatic.com/images/branding/product/1x/google_cloud_192dp.png","sizes":"192x192","type":"image/png"},{"src":"https://www.gstatic.com/images/branding/product/1x/google_cloud_512dp.png","sizes":"512x512","type":"image/png"}]}'>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              'brand-primary': '#2563EB',      // Blue-600
+              'brand-secondary': '#0EA5E9',    // Sky-500
+              'brand-light': '#BAE6FD',        // Sky-200
+              'brand-dark': '#1D4ED8',         // Blue-700
+              'surface-main': '#F3F4F6',      // Gray-100
+              'surface-card': '#FFFFFF',      // White
+              'surface-input': '#F9FAFB',      // Gray-50, with a border
+              'text-primary': '#1F2937',      // Gray-800
+              'text-secondary': '#6B7280',    // Gray-500
+              'text-placeholder': '#9CA3AF',    // Gray-400
+            },
+          },
+        },
+      }
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" integrity="sha512-BNaRQnYJYiPSqHHDb58B0yaPfCu+Wgds8Gp/gU33kqBtgNS4tSPHuGibyoVBL5gI9kDXrdkl6MHAbpZcaDFlgA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha512-qZvrmS2ekKPF2mSznTQsxqPgnpkI4DNTlrdUmTzrDgektczlKNRRhy5X5AAOnx5S09ydFYWWNSfcEqDTTHgtNA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      .print-only {
+        display: none;
+      }
+
+      /* PDF Export Styles */
+      .pdf-export-mode .printable-area {
+        background: white !important;
+      }
+      .pdf-export-mode .printable-area * {
+        /* color: black !important; */
+        background: transparent !important;
+        border-color: #ccc !important;
+      }
+      .pdf-export-mode .no-print {
+        display: none !important;
+      }
+      .pdf-export-mode .print-only {
+        display: block !important;
+      }
+      .pdf-export-mode .max-h-96 {
+        max-height: none !important;
+      }
+      .pdf-export-mode .overflow-y-auto {
+        overflow: visible !important;
+      }
+
+
+      @media print {
+        /* --- 1. Reset and Isolate --- */
+        
+        /* Hide everything in the body by default. `visibility` is used so we can override it for the printable section. */
+        body * {
+          visibility: hidden;
+        }
+
+        /* Make the .printable-area and all of its children visible again. */
+        .printable-area, .printable-area * {
+          visibility: visible;
+        }
+
+        /* Position the printable area to be the only thing on the page. */
+        .printable-area {
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 100%;
+          padding: 1rem; /* Add some margin to the printed page */
+          margin: 0;
+        }
+
+        /* --- 2. General Print Styling --- */
+        
+        /* Basic styles for the printed page */
+        body {
+          background-color: white !important;
+          color: black !important;
+          font-size: 10pt;
+        }
+
+        /* Reset colors and backgrounds within the report for black & white printing */
+        .printable-area * {
+            color: black !important;
+            background: transparent !important;
+        }
+
+        /* Add borders to sections to maintain visual structure */
+        .printable-area section, .printable-area .bg-surface-card {
+            background-color: transparent !important;
+            box-shadow: none !important;
+            border: 1px solid #ccc !important;
+            padding: 1rem !important;
+            margin-bottom: 1rem !important;
+        }
+
+        /* --- 3. Fix Content Overflow --- */
+        
+        /* This is the key fix: ensure the scrollable list expands to its full height */
+        .overflow-y-auto {
+            overflow: visible !important;
+        }
+        .max-h-96 {
+            max-height: none !important;
+        }
+        
+        /* --- 4. Control Page Breaks and Hide Unwanted Elements --- */
+
+        /* Prevent elements from being split across pages */
+        h1, h2, h3, p, div {
+            page-break-inside: avoid;
+        }
+        h2, h3 {
+            page-break-after: avoid;
+        }
+
+        /* Elements marked with .no-print (like buttons) should be forcefully hidden */
+        .no-print {
+          display: none !important;
+        }
+
+        /* Elements marked with .print-only should be shown */
+        .print-only {
+            display: block !important;
+        }
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0"
+  }
+}
+</script>
+</head>
+  <body class="bg-surface-main">
+    <div id="root"></div>
+    <script>
+      if ('serviceWorker' in navigator) {
+        const swCode = `
+          const CACHE_NAME = 'lead-performance-v2';
+          const urlsToCache = [
+            '/',
+            '/index.html',
+            'https://cdn.tailwindcss.com',
+            'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
+            'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+            'https://cdn.jsdelivr.net/npm/chart.js'
+          ];
+          
+          self.addEventListener('install', event => {
+            event.waitUntil(
+              caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache))
+            );
+          });
+
+          self.addEventListener('fetch', event => {
+            event.respondWith(
+              caches.match(event.request).then(response => {
+                if (response) {
+                  return response; // Cache hit
+                }
+                const fetchRequest = event.request.clone();
+                return fetch(fetchRequest).then(response => {
+                  if (!response || response.status !== 200 || !['basic', 'cors'].includes(response.type)) {
+                    return response;
+                  }
+                  const responseToCache = response.clone();
+                  caches.open(CACHE_NAME).then(cache => {
+                    cache.put(event.request, responseToCache);
+                  });
+                  return response;
+                });
+              })
+            );
+          });
+
+          self.addEventListener('activate', event => {
+            const cacheWhitelist = [CACHE_NAME];
+            event.waitUntil(
+              caches.keys().then(cacheNames => {
+                return Promise.all(
+                  cacheNames.map(cacheName => {
+                    if (cacheWhitelist.indexOf(cacheName) === -1) {
+                      return caches.delete(cacheName);
+                    }
+                  })
+                );
+              })
+            );
+          });
+        `;
+        const swBlob = new Blob([swCode], { type: 'application/javascript' });
+        const swUrl = URL.createObjectURL(swBlob);
+
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register(swUrl)
+            .then(registration => {
+              console.log('ServiceWorker registration successful with scope: ', registration.scope);
+            })
+            .catch(error => {
+              console.log('ServiceWorker registration failed: ', error);
+            });
+        });
+      }
+    </script>
+  </body>
+</html>
