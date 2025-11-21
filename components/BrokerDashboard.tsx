@@ -6,12 +6,20 @@ declare const html2canvas: any;
 declare const jspdf: any;
 declare const Chart: any;
 
+// Helper to get local date string YYYY-MM-DD
+const getTodayString = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 const NumberInput: React.FC<{
-  id: keyof Omit<DailyEntry, 'date'>;
+  id: keyof Omit<DailyEntry, 'date' | 'discardReason'>;
   label: string;
   value: number | ''; // Allow empty string for bulk edit
-  onChange: (field: keyof Omit<DailyEntry, 'date'>, value: number | '') => void;
+  onChange: (field: keyof Omit<DailyEntry, 'date' | 'discardReason'>, value: number | '') => void;
   placeholder: string;
   error?: boolean;
 }> = ({ id, label, value, onChange, placeholder, error }) => (
@@ -90,39 +98,89 @@ const BrokerDashboard: React.FC<BrokerDashboardProps> = ({ profile, onSaveEntry,
   const initialState: Omit<DailyEntry, 'date'> = {
     newLeads: 0, discardedLeads: 0, repiqueLeads: 0, localVisits: 0, contactingLeads: 0, inProgressLeads: 0,
     scheduledLeads: 0, negotiationLeads: 0, creditAnalysisLeads: 0, approvedLeads: 0, signedLeads: 0,
+    discardReason: '', // Initialize discardReason
   };
   const [dailyData, setDailyData] = useState(initialState);
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(getTodayString());
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const formRef = useRef<HTMLDivElement>(null);
   const [errors, setErrors] = useState<Partial<Record<keyof typeof initialState, boolean>>>({});
   const [dateToDelete, setDateToDelete] = useState<string | null>(null);
+  const [isDraft, setIsDraft] = useState(false);
 
   // State for bulk edit
   const [showBulkEditModal, setShowBulkEditModal] = useState(false);
-  const [bulkStartDate, setBulkStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [bulkEndDate, setBulkEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [bulkStartDate, setBulkStartDate] = useState(getTodayString());
+  const [bulkEndDate, setBulkEndDate] = useState(getTodayString());
   // FIX: Allow 'number | '' in bulkDailyData properties to correctly handle empty input fields.
-  const [bulkDailyData, setBulkDailyData] = useState<Partial<Record<keyof Omit<DailyEntry, 'date'>, number | ''>>>({});
+  const [bulkDailyData, setBulkDailyData] = useState<Partial<Record<keyof Omit<DailyEntry, 'date' | 'discardReason'>, number | ''>>>({});
   const [bulkErrors, setBulkErrors] = useState<Partial<Record<keyof typeof initialState, boolean>>>({});
 
   const monthlyChartRef = useRef<HTMLCanvasElement>(null);
   const monthlyChartInstanceRef = useRef<any>(null);
 
 
+  // --- AUTO-SAVE / DRAFT LOGIC ---
+  const getDraftKey = (date: string) => `draft_entry_${profile.brokerName}_${date}`;
+
+  // Load data: Check Draft -> Check Saved Entry -> Default
   useEffect(() => {
+    const draftKey = getDraftKey(selectedDate);
+    const savedDraft = localStorage.getItem(draftKey);
     const existingEntry = profile.dailyEntries.find(e => e.date === selectedDate);
+    
     setErrors({}); // Clear errors when date changes
-    if (existingEntry) {
+
+    if (savedDraft) {
+        // Priority 1: Unsaved Draft (Restore user work)
+        try {
+            const parsedDraft = JSON.parse(savedDraft);
+            setDailyData(parsedDraft);
+            setIsDraft(true);
+        } catch (e) {
+            console.error("Error parsing draft", e);
+            // Fallback if draft is corrupt
+            if (existingEntry) {
+                 const { date, ...formData } = existingEntry;
+                 setDailyData({ ...initialState, ...formData });
+                 setIsDraft(false);
+            } else {
+                setDailyData(initialState);
+                setIsDraft(false);
+            }
+        }
+    } else if (existingEntry) {
+      // Priority 2: Saved Database Entry
       const { date, ...formData } = existingEntry;
       setDailyData({ ...initialState, ...formData });
+      setIsDraft(false);
     } else {
+      // Priority 3: Clean Slate
       setDailyData(initialState);
+      setIsDraft(false);
     }
-  }, [selectedDate, profile.dailyEntries]);
+  }, [selectedDate, profile.dailyEntries, profile.brokerName]);
 
-  const handleNumberChange = (field: keyof typeof initialState, value: number | '') => {
+  // Save Draft on Change
+  useEffect(() => {
+      if (!dailyData) return;
+      
+      // Simple check to see if data is empty (all zeros), we might not want to save "empty" drafts 
+      // effectively, but for safety, we save everything.
+      
+      const draftKey = getDraftKey(selectedDate);
+      // We only save to draft if it differs from the "Saved" state, but simplifying:
+      // Always save current form state to draft.
+      localStorage.setItem(draftKey, JSON.stringify(dailyData));
+      setIsDraft(true);
+
+  }, [dailyData, selectedDate, profile.brokerName]);
+
+  // --- END AUTO-SAVE LOGIC ---
+
+
+  const handleNumberChange = (field: keyof Omit<DailyEntry, 'date' | 'discardReason'>, value: number | '') => {
     // Validation: check for negative numbers. Floats are handled by parseInt in the input.
     if (value !== '' && value < 0) {
       setErrors(prev => ({ ...prev, [field]: true }));
@@ -133,7 +191,7 @@ const BrokerDashboard: React.FC<BrokerDashboardProps> = ({ profile, onSaveEntry,
     setDailyData(prev => ({ ...prev, [field]: value === '' ? 0 : Math.max(0, value) }));
   };
 
-  const handleBulkNumberChange = (field: keyof typeof initialState, value: number | '') => {
+  const handleBulkNumberChange = (field: keyof Omit<DailyEntry, 'date' | 'discardReason'>, value: number | '') => {
     if (value !== '' && value < 0) {
       setBulkErrors(prev => ({ ...prev, [field]: true }));
     } else {
@@ -146,6 +204,17 @@ const BrokerDashboard: React.FC<BrokerDashboardProps> = ({ profile, onSaveEntry,
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (!selectedDate) {
+        alert('Por favor, selecione uma data válida para o lançamento.');
+        return;
+    }
+
+    const today = getTodayString();
+    if (selectedDate > today) {
+        alert('A data do lançamento não pode ser posterior à data atual (futura).');
+        return;
+    }
+
     // Check for any active errors before submitting
     const hasActiveErrors = Object.values(errors).some(isError => isError);
     if (hasActiveErrors) {
@@ -153,18 +222,29 @@ const BrokerDashboard: React.FC<BrokerDashboardProps> = ({ profile, onSaveEntry,
         return;
     }
 
-    const entryWithDate: DailyEntry = { ...dailyData, date: selectedDate };
+    // Clean discardReason if no discarded leads
+    const finalData = { ...dailyData };
+    if (finalData.discardedLeads === 0) {
+        finalData.discardReason = '';
+    }
+
+    const entryWithDate: DailyEntry = { ...finalData, date: selectedDate };
     onSaveEntry(entryWithDate);
+    
+    // Clear the draft since we successfully saved
+    localStorage.removeItem(getDraftKey(selectedDate));
+    setIsDraft(false);
+
     alert('Lançamento salvo com sucesso!');
   };
 
-  const labelsMap: { [key in keyof typeof initialState]: string } = {
+  const labelsMap: { [key in keyof Omit<DailyEntry, 'date' | 'discardReason'>]: string } = {
     newLeads: "Novos Leads", discardedLeads: "Descartados", repiqueLeads: "Repique", localVisits: "Visitas Locais", contactingLeads: "Tentando Contato",
     inProgressLeads: "Em Andamento", scheduledLeads: "Agendados", negotiationLeads: "Leads em Negociação",
     creditAnalysisLeads: "Análise de Crédito", approvedLeads: "Aprovados", signedLeads: "Contrato Assinado"
   };
 
-  const fieldOrder: (keyof typeof initialState)[] = [
+  const fieldOrder: (keyof Omit<DailyEntry, 'date' | 'discardReason'>)[] = [
     'newLeads', 'discardedLeads', 'repiqueLeads', 'localVisits', 'contactingLeads', 'inProgressLeads', 
     'scheduledLeads', 'negotiationLeads', 'creditAnalysisLeads', 'approvedLeads', 'signedLeads'
   ];
@@ -184,6 +264,17 @@ const BrokerDashboard: React.FC<BrokerDashboardProps> = ({ profile, onSaveEntry,
     return entriesWithBalance.reverse(); // reverse for on-screen display (most recent first)
   }, [profile.dailyEntries, profile.initialLeads]);
 
+  const allTimeStats = useMemo(() => {
+    const totalNew = profile.dailyEntries.reduce((acc, entry) => acc + entry.newLeads, 0);
+    const totalRepique = profile.dailyEntries.reduce((acc, entry) => acc + (entry.repiqueLeads || 0), 0);
+    const totalDiscarded = profile.dailyEntries.reduce((acc, entry) => acc + entry.discardedLeads, 0);
+    
+    return {
+      totalReceived: totalNew + totalRepique,
+      totalDiscarded: totalDiscarded
+    };
+  }, [profile.dailyEntries]);
+
   const handleGenerateCsv = () => {
     if (!profile || profile.dailyEntries.length === 0) {
       alert("Nenhum lançamento para exportar.");
@@ -193,23 +284,28 @@ const BrokerDashboard: React.FC<BrokerDashboardProps> = ({ profile, onSaveEntry,
     // Sort entries chronologically for the CSV file
     const chronologicalEntries = [...entriesWithCalculatedBalances].reverse();
 
+    // Check if any entry has a discard reason to determine if we need the column
+    const hasDiscardReasons = chronologicalEntries.some(entry => entry.discardReason && entry.discardReason.trim() !== '');
+
     // Define CSV headers
     const headers = [
       'Data',
-      'Base Inicial do Dia', // Added for CSV
+      'Base Inicial do Dia',
       ...fieldOrder.map(key => labelsMap[key]),
+      ...(hasDiscardReasons ? ['Motivo do Descarte'] : []), // Conditionally add header
       'Saldo Final do Dia'
     ];
 
     // Create CSV rows
     const rows = chronologicalEntries.map(entry => {
       const rowData = [
-        new Date(entry.date + 'T00:00:00').toLocaleDateString('pt-BR'), // Format date
-        entry.startOfDayBalance, // Added for CSV
+        new Date(entry.date + 'T00:00:00').toLocaleDateString('pt-BR'),
+        entry.startOfDayBalance,
         ...fieldOrder.map(key => entry[key as keyof DailyEntry] ?? 0),
+        ...(hasDiscardReasons ? [entry.discardReason || ''] : []), // Conditionally add value
         entry.endOfDayBalance
       ];
-      return rowData.join(',');
+      return rowData.map(val => typeof val === 'string' ? `"${val.replace(/"/g, '""')}"` : val).join(','); // Escape quotes
     });
 
     // Combine headers and rows
@@ -328,6 +424,11 @@ const BrokerDashboard: React.FC<BrokerDashboardProps> = ({ profile, onSaveEntry,
         .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()); // sort chronologically for the table
   }, [entriesWithCalculatedBalances, selectedMonth]);
 
+  // Check if any entry in the current report has a discard reason to show the column in PDF
+  const showDiscardReasonInReport = useMemo(() => {
+    return reportEntries.some(entry => entry.discardReason && entry.discardReason.trim() !== '');
+  }, [reportEntries]);
+
 
   useEffect(() => {
     if (!monthlyChartRef.current) {
@@ -430,6 +531,7 @@ const BrokerDashboard: React.FC<BrokerDashboardProps> = ({ profile, onSaveEntry,
   const confirmDelete = () => {
     if (dateToDelete) {
       onDeleteEntry(dateToDelete);
+      localStorage.removeItem(getDraftKey(dateToDelete)); // Also clear draft if deleting
       setDateToDelete(null);
     }
   };
@@ -437,7 +539,28 @@ const BrokerDashboard: React.FC<BrokerDashboardProps> = ({ profile, onSaveEntry,
   const handleBulkSave = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (new Date(bulkStartDate) > new Date(bulkEndDate)) {
+    const today = getTodayString();
+
+    if (!bulkStartDate) {
+      alert("Por favor, selecione a Data Inicial.");
+      return;
+    }
+
+    if (!bulkEndDate) {
+      alert("Por favor, selecione a Data Final.");
+      return;
+    }
+
+    if (bulkStartDate > today) {
+        alert("A Data Inicial não pode ser futura.");
+        return;
+    }
+    if (bulkEndDate > today) {
+        alert("A Data Final não pode ser futura.");
+        return;
+    }
+
+    if (bulkStartDate > bulkEndDate) {
       alert("A Data Inicial não pode ser posterior à Data Final.");
       return;
     }
@@ -468,9 +591,11 @@ const BrokerDashboard: React.FC<BrokerDashboardProps> = ({ profile, onSaveEntry,
         creditAnalysisLeads: typeof bulkDailyData.creditAnalysisLeads === 'number' ? bulkDailyData.creditAnalysisLeads : (existingEntry?.creditAnalysisLeads ?? 0),
         approvedLeads: typeof bulkDailyData.approvedLeads === 'number' ? bulkDailyData.approvedLeads : (existingEntry?.approvedLeads ?? 0),
         signedLeads: typeof bulkDailyData.signedLeads === 'number' ? bulkDailyData.signedLeads : (existingEntry?.signedLeads ?? 0),
+        discardReason: existingEntry?.discardReason || '', // Preserve existing reason during bulk number edit
       };
       
       onSaveEntry(updatedEntry);
+      localStorage.removeItem(getDraftKey(dateString)); // Clear drafts for bulk edited dates
 
       currentDate.setDate(currentDate.getDate() + 1);
     }
@@ -524,6 +649,34 @@ const BrokerDashboard: React.FC<BrokerDashboardProps> = ({ profile, onSaveEntry,
             </div>
           </section>
 
+          <section className="bg-surface-card rounded-2xl shadow-xl p-6 no-print">
+            <h2 className="text-lg font-semibold text-text-primary mb-4">Resumo Geral Acumulado</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div className="flex items-center justify-between p-4 bg-blue-50 rounded-xl border border-blue-100">
+                    <div>
+                        <p className="text-sm text-text-secondary font-medium">Total Recebidos (Novos + Repiques)</p>
+                        <p className="text-3xl font-bold text-brand-primary mt-1">{allTimeStats.totalReceived}</p>
+                    </div>
+                    <div className="p-3 bg-white rounded-full text-brand-primary shadow-sm">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                        </svg>
+                    </div>
+                </div>
+                <div className="flex items-center justify-between p-4 bg-red-50 rounded-xl border border-red-100">
+                     <div>
+                        <p className="text-sm text-text-secondary font-medium">Total de Leads Descartados</p>
+                        <p className="text-3xl font-bold text-red-600 mt-1">{allTimeStats.totalDiscarded}</p>
+                    </div>
+                    <div className="p-3 bg-white rounded-full text-red-600 shadow-sm">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                    </div>
+                </div>
+            </div>
+          </section>
+
           <div className="printable-area">
              {/* --- NEW, PROFESSIONAL PRINT-ONLY REPORT --- */}
             <div className="print-only p-8 bg-white text-black">
@@ -566,6 +719,7 @@ const BrokerDashboard: React.FC<BrokerDashboardProps> = ({ profile, onSaveEntry,
                                 <th scope="col" className="px-4 py-3 text-center">Novos Leads</th>
                                 <th scope="col" className="px-4 py-3 text-center">Contratos Assinados</th>
                                 <th scope="col" className="px-4 py-3 text-center">Leads Descartados</th>
+                                {showDiscardReasonInReport && <th scope="col" className="px-4 py-3 text-center">Motivo do Descarte</th>}
                                 <th scope="col" className="px-4 py-3 text-center">Saldo Final do Dia</th>
                             </tr>
                         </thead>
@@ -579,11 +733,12 @@ const BrokerDashboard: React.FC<BrokerDashboardProps> = ({ profile, onSaveEntry,
                                     <td className="px-4 py-3 text-center">{entry.newLeads}</td>
                                     <td className="px-4 py-3 text-center text-green-600 font-semibold">{entry.signedLeads}</td>
                                     <td className="px-4 py-3 text-center text-red-600 font-semibold">{entry.discardedLeads}</td>
+                                    {showDiscardReasonInReport && <td className="px-4 py-3 text-center text-gray-600 italic text-xs">{entry.discardReason || '-'}</td>}
                                     <td className="px-4 py-3 text-center font-bold text-gray-800">{entry.endOfDayBalance}</td>
                                 </tr>
                             ))}
                             {reportEntries.length === 0 && (
-                                <tr><td colSpan={6} className="text-center py-4">Nenhum lançamento neste mês.</td></tr>
+                                <tr><td colSpan={showDiscardReasonInReport ? 7 : 6} className="text-center py-4">Nenhum lançamento neste mês.</td></tr>
                             )}
                         </tbody>
                     </table>
@@ -636,18 +791,41 @@ const BrokerDashboard: React.FC<BrokerDashboardProps> = ({ profile, onSaveEntry,
                         <h3 className="font-bold text-lg text-brand-primary">{new Date(entry.date + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</h3>
                         <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 mt-2 text-sm list-disc list-inside">
                             <li className="col-span-full sm:col-span-1"><span className="font-semibold text-text-secondary">Base Inicial do Dia:</span> {entry.startOfDayBalance}</li>
-                            {Object.entries(entry).filter(([key, value]) => key !== 'date' && key !== 'endOfDayBalance' && key !== 'startOfDayBalance' && typeof value === 'number' && value > 0).map(([key, value]) => (
-                                <li key={key}><span className="font-semibold text-text-secondary">{labelsMap[key as keyof typeof initialState]}:</span> {value as number}</li>
+                            {Object.entries(entry).filter(([key, value]) => key !== 'date' && key !== 'discardReason' && key !== 'endOfDayBalance' && key !== 'startOfDayBalance' && typeof value === 'number' && value > 0).map(([key, value]) => (
+                                <li key={key}><span className="font-semibold text-text-secondary">{labelsMap[key as keyof Omit<DailyEntry, 'date' | 'discardReason'>]}:</span> {value as number}</li>
                             ))}
                         </ul>
+                        {entry.discardReason && (
+                            <div className="mt-2 p-2 bg-red-50 border border-red-100 rounded text-sm text-red-700">
+                                <span className="font-semibold">Motivo do Descarte:</span> {entry.discardReason}
+                            </div>
+                        )}
                           <div className="mt-3 pt-3 border-t border-gray-200/80 flex flex-wrap justify-between items-center gap-4">
                             <div className="flex flex-col">
                               <p className="text-md font-semibold text-text-primary">Leads restantes p/ dia seguinte: <span className="text-brand-primary text-lg">{entry.endOfDayBalance}</span></p>
                               <p className="text-md font-semibold text-text-primary">Aproveitamento do Dia: <span className="text-brand-secondary text-lg">{dailyUtilization}</span></p>
                             </div>
                             <div className="flex gap-2 no-print">
-                                <button onClick={() => handleEditClick(entry)} className="px-3 py-1 text-sm bg-brand-light/50 text-brand-dark rounded hover:bg-brand-light transition">Editar</button>
-                                <button onClick={() => setDateToDelete(entry.date)} className="px-3 py-1 text-sm bg-red-500/10 text-red-600 rounded hover:bg-red-500/20 transition">Excluir</button>
+                                <button 
+                                  onClick={() => handleEditClick(entry)} 
+                                  className="flex items-center gap-1 px-3 py-1 text-sm bg-brand-light/50 text-brand-dark rounded-md hover:bg-brand-light transition border border-brand-light/50"
+                                  title="Editar lançamento"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                  </svg>
+                                  Editar
+                                </button>
+                                <button 
+                                  onClick={() => setDateToDelete(entry.date)} 
+                                  className="flex items-center gap-1 px-3 py-1 text-sm bg-red-50 text-red-600 rounded-md hover:bg-red-100 transition border border-red-200"
+                                  title="Excluir lançamento"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                  Excluir
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -658,17 +836,28 @@ const BrokerDashboard: React.FC<BrokerDashboardProps> = ({ profile, onSaveEntry,
           </section>
 
           <section ref={formRef} className="bg-surface-card rounded-2xl shadow-xl p-6 sm:p-8 no-print">
-            <h2 className="text-2xl font-semibold text-text-primary mb-1">Lançamento do Dia</h2>
+            <div className="flex justify-between items-center mb-1">
+                <h2 className="text-2xl font-semibold text-text-primary">Lançamento do Dia</h2>
+                {isDraft && (
+                    <div className="flex items-center gap-2 text-sm text-brand-secondary bg-brand-light/30 px-3 py-1 rounded-full animate-pulse">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        <span>Rascunho salvo automaticamente</span>
+                    </div>
+                )}
+            </div>
             <p className="text-text-secondary mb-6">Selecione uma data para adicionar ou editar as atividades.</p>
             <form onSubmit={handleSubmit}>
               <div className="mb-6">
                  <label htmlFor="entryDate" className="block text-sm font-medium text-text-secondary mb-2">Data</label>
                  <input type="date" id="entryDate" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)}
+                    max={getTodayString()}
                     className="px-4 py-3 bg-surface-input border border-gray-200 rounded-lg text-text-primary placeholder-text-placeholder focus:ring-2 focus:ring-brand-primary focus:border-brand-primary outline-none transition-all duration-200"/>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
                 {fieldOrder.map(key => {
-                  const keyTyped = key as keyof typeof initialState;
+                  const keyTyped = key as keyof Omit<DailyEntry, 'date' | 'discardReason'>;
                   return <NumberInput 
                     key={keyTyped} 
                     id={keyTyped} 
@@ -679,6 +868,18 @@ const BrokerDashboard: React.FC<BrokerDashboardProps> = ({ profile, onSaveEntry,
                     error={errors[keyTyped]}
                     />
                 })}
+                {dailyData.discardedLeads > 0 && (
+                    <div className="col-span-full animate-fade-in">
+                         <label htmlFor="discardReason" className="block text-sm font-medium text-text-secondary mb-2">Motivo do Descarte</label>
+                         <textarea
+                            id="discardReason"
+                            value={dailyData.discardReason || ''}
+                            onChange={(e) => setDailyData({ ...dailyData, discardReason: e.target.value })}
+                            placeholder="Descreva o motivo do descarte..."
+                            className="w-full px-4 py-3 bg-surface-input border border-gray-200 rounded-lg text-text-primary placeholder-text-placeholder focus:ring-2 focus:ring-brand-primary focus:border-brand-primary outline-none transition-all duration-200 min-h-[100px]"
+                         />
+                    </div>
+                )}
               </div>
               <button type="submit" className="w-full sm:w-auto px-8 py-3 bg-gradient-to-r from-brand-primary to-brand-secondary text-white rounded-lg font-semibold shadow-lg hover:opacity-90 transition-opacity duration-200">
                 Salvar Lançamento
@@ -687,7 +888,10 @@ const BrokerDashboard: React.FC<BrokerDashboardProps> = ({ profile, onSaveEntry,
           </section>
           
           <div className="mt-10 text-center no-print">
-            <button onClick={onReset} className="px-8 py-3 bg-brand-secondary/80 text-white rounded-lg font-semibold shadow-lg hover:bg-brand-secondary transition-colors duration-200">
+            <button onClick={onReset} className="inline-flex items-center gap-2 px-8 py-3 bg-brand-secondary/80 text-white rounded-lg font-semibold shadow-lg hover:bg-brand-secondary transition-colors duration-200">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
               Trocar de Corretor
             </button>
           </div>
@@ -730,18 +934,20 @@ const BrokerDashboard: React.FC<BrokerDashboardProps> = ({ profile, onSaveEntry,
                 <div>
                   <label htmlFor="bulkStartDate" className="block text-sm font-medium text-text-secondary mb-2">Data Inicial</label>
                   <input type="date" id="bulkStartDate" value={bulkStartDate} onChange={(e) => setBulkStartDate(e.target.value)}
+                    max={getTodayString()}
                     className="w-full px-4 py-3 bg-surface-input border border-gray-200 rounded-lg text-text-primary placeholder-text-placeholder focus:ring-2 focus:ring-brand-primary focus:border-brand-primary outline-none transition-all duration-200"/>
                 </div>
                 <div>
                   <label htmlFor="bulkEndDate" className="block text-sm font-medium text-text-secondary mb-2">Data Final</label>
                   <input type="date" id="bulkEndDate" value={bulkEndDate} onChange={(e) => setBulkEndDate(e.target.value)}
+                    max={getTodayString()}
                     className="w-full px-4 py-3 bg-surface-input border border-gray-200 rounded-lg text-text-primary placeholder-text-placeholder focus:ring-2 focus:ring-brand-primary focus:border-brand-primary outline-none transition-all duration-200"/>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
                 {fieldOrder.map(key => {
-                  const keyTyped = key as keyof typeof initialState;
+                  const keyTyped = key as keyof Omit<DailyEntry, 'date' | 'discardReason'>;
                   return <NumberInput 
                     key={`bulk-${keyTyped}`} 
                     id={keyTyped} 

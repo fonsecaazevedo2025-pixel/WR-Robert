@@ -1,3 +1,4 @@
+
 export interface DailyEntry {
   date: string; // YYYY-MM-DD
   newLeads: number;
@@ -11,6 +12,7 @@ export interface DailyEntry {
   creditAnalysisLeads: number;
   approvedLeads: number;
   signedLeads: number;
+  discardReason?: string; // Added for tracking reasons when discardedLeads > 0
   startOfDayBalance?: number; // Added for calculated balance in dashboard/reports
 }
 

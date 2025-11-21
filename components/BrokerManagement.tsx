@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import type { BrokerProfile } from '../types';
 
@@ -419,41 +420,66 @@ const BrokerManagement: React.FC<BrokerManagementProps> = ({ brokers, onAddBroke
               const totalSales = broker.dailyEntries.reduce((sum, entry) => sum + entry.signedLeads, 0);
               const totalNewLeads = broker.dailyEntries.reduce((sum, entry) => sum + entry.newLeads, 0);
               const totalRepiqueLeads = broker.dailyEntries.reduce((sum, entry) => sum + (entry.repiqueLeads || 0), 0);
+              const totalDiscarded = broker.dailyEntries.reduce((sum, entry) => sum + entry.discardedLeads, 0);
+              const totalVisits = broker.dailyEntries.reduce((sum, entry) => sum + entry.localVisits, 0);
+              
               const totalLeadsIn = totalNewLeads + totalRepiqueLeads;
               const conversionRate = totalLeadsIn > 0 ? ((totalSales / totalLeadsIn) * 100).toFixed(1) : "0.0";
+              
               return(
-                <div key={broker.brokerName} className="bg-surface-card rounded-xl shadow-lg p-5 flex flex-col justify-between transition-transform hover:scale-105 duration-300">
+                <div key={broker.brokerName} className="bg-surface-card rounded-xl shadow-lg p-5 flex flex-col justify-between transition-transform hover:scale-105 duration-300 border border-gray-100">
                   <div>
-                    <div className="flex justify-between items-start">
-                      <h3 className="text-xl font-bold text-text-primary">{broker.brokerName}</h3>
-                      <button onClick={() => handleEditClick(broker)} className="text-text-secondary hover:text-brand-primary transition-colors p-1 -mt-1 -mr-1">
+                    <div className="flex justify-between items-start border-b border-gray-100 pb-3 mb-3">
+                      <div>
+                          <h3 className="text-xl font-bold text-text-primary">{broker.brokerName}</h3>
+                          <p className="text-xs text-text-secondary">Base inicial: <span className="font-semibold text-text-primary">{broker.initialLeads}</span></p>
+                      </div>
+                      <button onClick={() => handleEditClick(broker)} className="text-text-secondary hover:text-brand-primary transition-colors p-1">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                           <path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" />
                           <path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" />
                         </svg>
                       </button>
                     </div>
-                    <p className="text-sm text-text-secondary mb-4">Base inicial: {broker.initialLeads} leads</p>
-                    <div className="flex justify-around text-center border-t border-b border-gray-200 py-3 my-3">
+                    
+                    <div className="flex justify-around text-center bg-brand-light/20 rounded-lg py-2 mb-4">
                       <div>
                         <p className="text-2xl font-bold text-brand-primary">{totalSales}</p>
-                        <p className="text-xs text-text-secondary uppercase">Vendas</p>
+                        <p className="text-xs text-brand-dark font-semibold uppercase">Vendas</p>
                       </div>
                       <div>
-                        <p className="text-2xl font-bold text-brand-secondary">{totalLeadsIn}</p>
-                        <p className="text-xs text-text-secondary uppercase">Leads</p>
-                      </div>
-                      <div>
-                        <p className="text-2xl font-bold text-text-primary">{conversionRate}<span className="text-lg">%</span></p>
+                        <p className="text-2xl font-bold text-text-primary">{conversionRate}<span className="text-sm">%</span></p>
                         <p className="text-xs text-text-secondary uppercase">Conversão</p>
                       </div>
+                    </div>
+
+                    <div className="bg-surface-input rounded-lg p-3 mb-4">
+                         <h4 className="text-xs font-bold text-text-secondary uppercase mb-2 text-center border-b border-gray-200 pb-1">Resumo Geral</h4>
+                         <div className="grid grid-cols-2 gap-y-3 gap-x-2 text-center">
+                            <div>
+                                <p className="text-lg font-bold text-brand-secondary">{totalNewLeads}</p>
+                                <p className="text-[10px] text-text-secondary uppercase">Novos Leads</p>
+                            </div>
+                            <div>
+                                <p className="text-lg font-bold text-blue-500">{totalRepiqueLeads}</p>
+                                <p className="text-[10px] text-text-secondary uppercase">Repiques</p>
+                            </div>
+                            <div>
+                                <p className="text-lg font-bold text-purple-600">{totalVisits}</p>
+                                <p className="text-[10px] text-text-secondary uppercase">Visitas</p>
+                            </div>
+                            <div>
+                                <p className="text-lg font-bold text-red-500">{totalDiscarded}</p>
+                                <p className="text-[10px] text-text-secondary uppercase">Descartados</p>
+                            </div>
+                         </div>
                     </div>
                   </div>
                   <button
                     onClick={() => onSelectBroker(broker.brokerName)}
-                    className="w-full mt-4 px-4 py-2 bg-brand-primary text-white rounded-lg font-semibold shadow-md hover:bg-brand-dark transition-colors duration-200"
+                    className="w-full mt-auto px-4 py-2 bg-brand-primary text-white rounded-lg font-semibold shadow-md hover:bg-brand-dark transition-colors duration-200"
                   >
-                    Ver Painel
+                    Ver Painel Completo
                   </button>
                 </div>
             )})}
